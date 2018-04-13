@@ -1,0 +1,8 @@
+#!/bin/bash
+
+: ${BACKUP_SERVER:="root@backup"}
+#: ${SRC:="/etc /home"}
+#: ${FULL_MOUNT:="/home/${HOSTNAME}-full-backup"}
+#: ${DAILY_MOUNT:="/home/${HOSTNAME}-daily-backup"}
+#: ${FULL_PATH:="/full"}
+#: ${DAILY_PATH:="/${today}"}
