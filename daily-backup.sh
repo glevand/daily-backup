@@ -1,6 +1,6 @@
 #!/bin/bash
 
-today=$(date +%Y-%m-%d-%A-%H:%M-%p)
+today=$(date +%Y-%m-%d-%A-%H:%M)
 
 dir="$(cd "$( dirname "${BASH_SOURCE[0]}" )/" && pwd)"
 basename="$(basename $0)"
