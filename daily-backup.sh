@@ -148,35 +148,32 @@ run_cmd () {
 
 disk_usage () {
 	for mnt in ${FULL_MOUNT} ${DAILY_MOUNT}; do
-		local cmd="${SSH} du -sh ${mnt}/* | egrep --invert-match 'lost\+found$'"
-		run_cmd ${cmd}
+		local cmd="${SSH} du -sh ${mnt}/*"
+		run_cmd ${cmd} | egrep --invert-match 'lost\+found' | egrep '^d'
 	done
 }
 
 get_files () {
 	local mnt=${1}
-	local cmd="${SSH} ls -ltr ${mnt} | egrep --invert-match 'lost\+found$' | egrep '^d'"
+	local cmd="${SSH} ls -ltr ${mnt}"
 
-	run_cmd ${cmd}
+	run_cmd ${cmd} | egrep --invert-match 'lost\+found'  | egrep '^d'
 }
 
 print_files () {
 	echo ""
 	echo "Daily backups:"
-	local files="$(get_files ${DAILY_MOUNT})"
-	echo "${files}" | awk '{print $NF}'
+	get_files ${DAILY_MOUNT} | awk '{print $NF}'
 
 	echo ""
 	echo "Full backups:"
-	files="$(get_files ${FULL_MOUNT})"
-	echo "${files}" | awk '{print $NF}'
+	get_files ${FULL_MOUNT} | awk '{print $NF}'
 }
 
 get_disk_stats () {
 	local mnt=${1}
-	local cmd="${SSH} df -h | egrep '${mnt}'"
-
-	run_cmd ${cmd}
+	local cmd="${SSH} df -h"
+	run_cmd ${cmd} | egrep "${mnt}"
 }
 
 print_disk_stats () {
