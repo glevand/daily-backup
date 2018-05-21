@@ -134,7 +134,7 @@ fi
 result=1
 
 run_cmd () {
-	local cmd=${@}
+	local cmd="${*}"
 
 	if [[ -n ${verbose} || -n "${dry_run}" ]]; then
 		echo "==> ${cmd}"
@@ -142,7 +142,7 @@ run_cmd () {
 	if [[ -n "${dry_run}" ]]; then
 		true
 	else
-		${cmd}
+		eval "${cmd}"
 	fi
 }
 
