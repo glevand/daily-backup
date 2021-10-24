@@ -1,9 +1,35 @@
-#!/bin/bash
-# Config file for daily-backup.sh
+# Sample config file for daily-backup.
+# https://github.com/glevand/daily-backup
+#
+# backup_server: The machine that hosts the backup files.  Use 'localhost' to
+# save to the same machine.
+#
+# backup_list: The list of directories to back up.
+#
+# full_backup_mount: The mount point for the full backups.  The fstab file must
+# have the proper entries to check and allow automated mounting.
+#
+# full_backup_path: The path relative to the full_backup_mount to store the
+# full backup files.
+#
+# daily_backup_mount: The mount point for the daily backups.  The fstab file must
+# have the proper entries to check and allow automated mounting.  Note that
+# daily_backup_mount can be the same as full_backup_mount.
+#
+# daily_backup_path: The path relative to the daily_backup_mount to store the
+# daily backup files.
+#
 
-BACKUP_SERVER=${BACKUP_SERVER:-"root@backup"}
-#SRC=${SRC:-"/etc /home"}
-#FULL_MOUNT=${FULL_MOUNT:-"/home/${HOSTNAME}-full-backup"}
-#DAILY_MOUNT=${DAILY_MOUNT:-"/home/${HOSTNAME}-daily-backup"}
-#FULL_PATH=${FULL_PATH:-"/full"}
-#DAILY_PATH=${DAILY_PATH:-"/${today}"}
+# backup_server='localhost'
+backup_server="${backup_server:-backup-host}"
+
+backup_list=(
+	'/etc'
+	'/home/${USER}'
+)
+
+full_backup_mount="${full_backup_mount:-/home/${HOSTNAME}-full_backups}"
+full_backup_path="${full_backup_path:-/daily-backups}"
+
+daily_backup_mount="${daily_backup_mount:-/home/${HOSTNAME}-daily_backups}"
+daily_backup_path="${daily_backup_path:-/daily-backups}"
