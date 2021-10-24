@@ -4,33 +4,37 @@ usage() {
 	local old_xtrace
 	old_xtrace="$(shopt -po xtrace || :)"
 	set +o xtrace
-	echo "${script_name} - Daily rsync backup." >&2
-	echo "Usage: ${script_name} [flags]" >&2
-	echo "Option flags:" >&2
-	echo "  -c --check    - Run shellcheck." >&2
-	echo "  -h --help     - Show this help and exit." >&2
-	echo "  -v --verbose  - Verbose execution." >&2
 
-	echo "  -d --debug    - Debug mode." >&2
-	echo "  -l --clean    - Delete oldest existing daily backup." >&2
-	echo "  -s --stats    - Report BACKUP_SERVER disk stats." >&2
-	echo "  -u --usage    - Report BACKUP_SERVER disk usage (slow)." >&2
-	echo "Environment/Config:" >&2
-	echo "  BACKUP_SERVER - Required. Default: '${BACKUP_SERVER:-(none)}'" >&2
-	echo "  DAILY_MOUNT   - Default: '${DAILY_MOUNT}'" >&2
-	echo "  DAILY_PATH    - Default: '${DAILY_PATH}'" >&2
-	echo "  FULL_MOUNT    - Default: '${FULL_MOUNT}'" >&2
-	echo "  FULL_PATH     - Default: '${FULL_PATH}'" >&2
-	echo "  SRC           - List of directories to backup. Default: '${SRC}'" >&2
-	echo "Examples:" >&2
-	echo "  BACKUP_SERVER=\"my-backup\" ${script_name} -s"
-	echo "  nice -n19 ${script_name} -v"
+	{
+		echo "${script_name} - Daily rsync backup."
+		echo "Usage: ${script_name} [flags]"
+		echo "Option flags:"
+		echo "  -c --clean    - Delete oldest existing daily backup."
+		echo "  -s --stats    - Report backup server disk stats."
+		echo "  -u --usage    - Report backup server disk usage (slow)."
+		echo "  -k --checksum - Use rsync checksum (slow)."
+		echo "  -h --help     - Show this help and exit."
+		echo "  -v --verbose  - Verbose execution. Default: '${verbose}'."
+		echo "  -g --debug    - Extra verbose execution. Default: '${debug}'."
+		echo "  -d --dry-run  - Dry run, don't run rsync."
+		echo "Environment/Config:"
+		echo "  backup_server      - Required. Default: '${backup_server:-(none)}'"
+		echo "  backup_list        - List of directories to backup. Default: '${backup_list[@]}'"
+		echo "  full_backup_mount  - Default: '${full_backup_mount}'"
+		echo "  full_backup_path   - Default: '${full_backup_path}'"
+		echo "  daily_backup_mount - Default: '${daily_backup_mount}'"
+		echo "  daily_backup_path  - Default: '${daily_backup_path}'"
+		echo "Examples:"
+		echo "  backup_server=\"my-backup\" ${script_name} -s"
+		echo "  nice -n19 ${script_name} -v"
+	} >&2
+
 	eval "${old_xtrace}"
 }
 
 process_opts() {
-	local short_opts="chvdlsu"
-	local long_opts="check,help,verbose,debug,clean,stats,usage"
+	local short_opts="csukhvgd"
+	local long_opts="clean,stats,usage,checksum,help,verbose,debug,dry-run"
 
 	local opts
 	opts=$(getopt --options ${short_opts} --long ${long_opts} -n "${script_name}" -- "$@")
@@ -40,26 +44,8 @@ process_opts() {
 	while true ; do
 		#echo "${FUNCNAME[0]}: @${1}@ @${2}@"
 		case "${1}" in
-		-c | --check)
-			check=1
-			shift
-			;;
-		-h | --help)
-			usage=1
-			shift
-			;;
-		-v | --verbose)
-			verbose=1
-			shift
-			;;
-		-l | --clean)
-			clean=1
-			shift
-			;;
-		-d | --debug)
-			set -x
-			verbose=1
-			debug=1
+		-c | --clean)
+			disk_clean=1
 			shift
 			;;
 		-s | --stats)
@@ -70,13 +56,36 @@ process_opts() {
 			disk_usage=1
 			shift
 			;;
+		-k | --checksum)
+			checksum=1
+			shift
+			;;
+		-h | --help)
+			usage=1
+			shift
+			;;
+		-v | --verbose)
+			verbose=1
+			shift
+			;;
+		-g | --debug)
+			verbose=1
+			debug=1
+			keep_tmp_dir=1
+			set -x
+			shift
+			;;
+		-d | --dry-run)
+			dry_run=1
+			shift
+			;;
 		--)
 			shift
-			if [[ ${1} ]]; then
-				echo "${script_name}: ERROR: Extra args found: '${*}'." >&2
-				usage
-				exit 1
+			arg_1="${1:-}"
+			if [[ ${arg_1} ]]; then
+				shift
 			fi
+			extra_args="${*}"
 			break
 			;;
 		*)
@@ -90,25 +99,40 @@ process_opts() {
 on_exit() {
 	local result=${1}
 
-	umount_vols
-	echo "${script_name}: Done: ${result}" >&2
-}
+	local sec="${SECONDS}"
 
-run_shellcheck() {
-	local file=${1}
-
-	shellcheck=${shellcheck:-"shellcheck"}
-
-	if ! test -x "$(command -v "${shellcheck}")"; then
-		echo "${script_name}: ERROR: Please install '${shellcheck}'." >&2
-		exit 1
+	if [[ -d "${tmp_dir:-}" ]]; then
+		if [[ ${keep_tmp_dir:-} ]]; then
+			echo "${script_name}: INFO: tmp dir preserved: '${tmp_dir}'" >&2
+		else
+			rm -rf "${tmp_dir:?}"
+		fi
 	fi
 
-	${shellcheck} "${file}"
+	umount_vols
+
+	echo "${script_name}: Done: ${result}, ${sec} sec." >&2
 }
 
-find_config () {
-	local dirs="${SCRIPTS_TOP} ${HOME} /etc"
+on_err() {
+	local f_name=${1}
+	local line_no=${2}
+	local err_no=${3}
+
+	{
+		if [[ ${on_err_debug:-} ]]; then
+			echo '------------------------'
+			set
+			echo '------------------------'
+		fi
+		echo "${script_name}: ERROR: function=${f_name}, line=${line_no}, result=${err_no}"
+	} >&2
+
+	exit "${err_no}"
+}
+
+find_config() {
+	local dirs="${SCRIPT_TOP} ${HOME} /etc"
 	local sufs=".conf .config"
 	local d s
 
@@ -123,132 +147,173 @@ find_config () {
 	done
 }
 
-disk_usage () {
-	for mnt in ${FULL_MOUNT} ${DAILY_MOUNT}; do
+run_remote_cmd() {
+	local host=${1}
+	shift
+	local cmd="${@}"
+	local ssh_opts=''
+
+	if [[ ! ${verbose} ]]; then
+		ssh_opts=' --quiet'
+	fi
+
+	if [[ "${host}" == 'localhost' ]]; then
+		full_cmd="${cmd}"
+	else
+		full_cmd="${ssh} ${ssh_opts} ${host} ${cmd}"
+	fi
+	eval "${full_cmd}"
+}
+
+disk_usage() {
+	for mnt in ${full_backup_mount} ${daily_backup_mount}; do
 		local cmd="${SSH} du -sh ${mnt}/*"
 		eval "${cmd}" | grep -E --invert-match 'lost\+found' | grep -E '^d'
 	done
 }
 
-get_files () {
+get_files() {
+	local dir=${1}
+
+	run_remote_cmd "${backup_server}" ls -dgotr "${dir}" | grep -E --invert-match 'lost\+found'  | grep -E '^d'
+}
+
+print_files() {
+	{
+		echo "${script_name}: INFO: full backups:"
+		get_files "${full_backup_mount}${full_backup_path}/full/*"
+
+		echo
+		echo "${script_name}: INFO: daily backups:"
+		get_files "${daily_backup_mount}${daily_backup_path}/daily-*"
+		echo
+	}
+}
+
+get_disk_stats() {
 	local mnt=${1}
-	local cmd="${SSH} ls -ltr ${mnt}"
 
-	eval "${cmd}" | grep -E --invert-match 'lost\+found'  | grep -E '^d'
+	run_remote_cmd "${backup_server}" df -h | grep -E "(Filesystem|${mnt})"
 }
 
-print_files () {
-	echo ""
-	echo "Daily backups:"
-	get_files "${DAILY_MOUNT}" | awk '{print $NF}'
-
-	echo ""
-	echo "Full backups:"
-	get_files "${FULL_MOUNT}" | awk '{print $NF}'
+print_disk_stats() {
+	{
+		echo "${script_name}: INFO: full mount stats:"
+		get_disk_stats "${full_backup_mount}"
+		echo
+		echo "${script_name}: INFO: daily mount stats:"
+		get_disk_stats "${daily_backup_mount}"
+		echo
+	}
 }
 
-get_disk_stats () {
-	local mnt=${1}
-	local cmd="${SSH} df -h"
-	eval "${cmd}" | grep -E "${mnt}"
-}
-
-print_disk_stats () {
-	echo "Filesystem      Size  Used Avail Use% Mounted on"
-	get_disk_stats "${FULL_MOUNT}"
-	get_disk_stats "${DAILY_MOUNT}"
-}
-
-print_disk_info () {
+print_disk_info() {
 	print_files
-	echo ""
 	print_disk_stats
 }
 
-clean_daily () {
+clean_daily() {
 	#local files
-	#files=$(get_files "${DAILY_MOUNT}" | awk '{print $NF}')
+	#files=$(get_files "${daily_backup_mount}" | awk '{print $NF}')
 
 	local oldest
-	oldest="$(get_files "${DAILY_MOUNT}" | awk '{print $NF}' | head -1 | sed 's/\r//')"
+	oldest="$(get_files "${daily_backup_mount}" | awk '{print $NF}' | head -1 | sed 's/\r//')"
 
 	if [[ -z "${oldest}" ]]; then
-		echo "INFO: No files found: '${BACKUP_SERVER}:${DAILY_MOUNT}'." >&2
+		echo "${script_name}: INFO: No files found: '${backup_server}:${daily_backup_mount}'." >&2
 		return 0
 	fi
 
-	echo "TODO: Would clean: '${BACKUP_SERVER}:${DAILY_MOUNT}/${oldest}'."
+	echo "TODO: Would clean: '${backup_server}:${daily_backup_mount}/${oldest}'."
 
 	if [[ ${verbose} ]]; then
 		local extra="--verbose"
 	fi
 
-	#local cmd="${SSH} rm -rf ${extra} ${DAILY_MOUNT}/${oldest}"
-	local cmd="${SSH} ls -ld ${DAILY_MOUNT}/${oldest}"
+	#local cmd="${SSH} rm -rf ${extra} ${daily_backup_mount}/${oldest}"
+	local cmd="${SSH} ls -ld ${daily_backup_mount}/${oldest}"
 
 	eval "${cmd}"
 }
 
-mount_op () {
-	local op="${1}"
+mount_vols() {
 	local mnt
-	local cmd
 
-	if [[ ${verbose} ]]; then
-		local extra="--verbose"
-	fi
-
-	for mnt in "${FULL_MOUNT}" "${DAILY_MOUNT}"; do
-		cmd="${SSH} ${op} ${extra} ${mnt}"
-
-		eval "${cmd}"
-
-		if [[ "${op}" == "mount" ]]; then
-			need_umount=1
+	for mnt in "${full_backup_mount}" "${daily_backup_mount}"; do
+		if [[ "${backup_server}" == 'localhost' ]] && mountpoint -q "${mnt}"; then
+			if [[ ${verbose} ]]; then
+				echo "${script_name}: INFO: '${mnt}' already mounted." >&2
+			fi
+			continue
 		fi
+		unmount_list+=("${mnt}")
+		run_remote_cmd "${backup_server}" mount --verbose "${unmount_list[i]}"
+	done
+
+# 	echo "${FUNCNAME[0]}: unmount_list count = ${#unmount_list[@]}"
+# 	for (( i = 0; i < ${#unmount_list[@]}; i++ )); do
+# 		echo "${FUNCNAME[0]}: '${unmount_list[i]}'"
+# 	done
+}
+
+umount_vols() {
+	local i
+
+# 	echo "${FUNCNAME[0]}: unmount_list count = ${#unmount_list[@]}"
+
+	for (( i = 0; i < ${#unmount_list[@]}; i++ )); do
+		echo "${FUNCNAME[0]}: '${unmount_list[i]}'"
+
+		run_remote_cmd "${backup_server}" umount --verbose "${unmount_list[i]}"
+		unset unmount_list[i]
 	done
 }
 
-mount_vols () {
-	mount_op "mount"
-}
-
-umount_vols () {
-	if [[ ${need_umount} ]]; then
-		mount_op "umount"
-	fi
-}
-
 #===============================================================================
-# program start
-#===============================================================================
-export PS4='\[\e[0;33m\]+ ${BASH_SOURCE##*/}:${LINENO}:(${FUNCNAME[0]:-"?"}):\[\e[0m\] '
+export PS4='\[\e[0;33m\]+ ${BASH_SOURCE##*/}:${LINENO}:(${FUNCNAME[0]:-main}):\[\e[0m\] '
 
 script_name="${0##*/}"
-SCRIPTS_TOP=${SCRIPTS_TOP:-"$( cd "${BASH_SOURCE%/*}" && pwd )"}
 
-trap "on_exit 'failed.'" EXIT
-set -e
-
-today=$(date +%Y-%m-%d-%A-%H:%M)
 SECONDS=0
+start_time="$(date +%Y.%m.%d-%H.%M.%S)"
+
+real_source="$(realpath "${BASH_SOURCE}")"
+SCRIPT_TOP="$(realpath "${SCRIPT_TOP:-${real_source%/*}}")"
+
+trap "on_exit 'Failed'" EXIT
+trap 'on_err ${FUNCNAME[0]:-main} ${LINENO} ${?}' ERR
+trap 'on_err SIGUSR1 ? 3' SIGUSR1
+
+set -eE
+set -o pipefail
+set -o nounset
+
+disk_clean=''
+disk_stats=''
+disk_usage=''
+checksum=''
+usage=''
+verbose=''
+debug=''
+dry_run=''
+
+keep_tmp_dir=''
+rsync_opts=''
+
+declare -a unmount_list=()
+
+ssh="${ssh:-ssh}"
+rsync="${rsync:-rsync}"
 
 process_opts "${@}"
 
 config_file="${config_file:-$(find_config)}"
 
 if [[ -f "${config_file}" ]]; then
-	# shellcheck source=/dev/null
 	source "${config_file}"
 else
-	echo "${config_file}: WARNING: No config file found." >&2
+	echo "${script_name}: WARNING: No config file found." >&2
 fi
-
-SRC=${SRC:-"/etc /home"}
-FULL_MOUNT=${FULL_MOUNT:-"/home/${HOSTNAME}-full-backup"}
-DAILY_MOUNT=${DAILY_MOUNT:-"/home/${HOSTNAME}-daily-backup"}
-FULL_PATH=${FULL_PATH:-"/full"}
-DAILY_PATH=${DAILY_PATH:-"/${today}"}
 
 if [[ ${usage} ]]; then
 	usage
@@ -256,17 +321,13 @@ if [[ ${usage} ]]; then
 	exit 0
 fi
 
-if [[ ${check} ]]; then
-	run_shellcheck "${0}"
-	trap - EXIT
-	exit 0
-fi
+{
+	echo "${script_name} -- ${start_time}"
+	echo
+}
 
-if [[ ${verbose} ]]; then
-	SSH="ssh -t ${BACKUP_SERVER}"
-else
-	SSH="ssh -q -t ${BACKUP_SERVER}"
-fi
+full_dir="${full_backup_mount}${full_backup_path}/full"
+daily_dir="${daily_backup_mount}${daily_backup_path}/daily-${start_time}"
 
 mount_vols
 
@@ -275,44 +336,64 @@ if [[ ${disk_usage} ]]; then
 	echo ""
 	echo "Getting disk usage..."
 	disk_usage
-	trap "on_exit 'success.'" EXIT
+	trap "on_exit 'Success'" EXIT
 	exit 0
 fi
 
 if [[ ${disk_stats} ]]; then
 	print_disk_info
-	trap "on_exit 'success.'" EXIT
+	trap "on_exit 'Success'" EXIT
 	exit 0
 fi
 
-if [[ ${clean} ]]; then
+if [[ ${disk_clean} ]]; then
 	clean_daily
 	echo ""
 	print_disk_info
-	trap "on_exit 'success.'" EXIT
+	trap "on_exit 'Success'" EXIT
 	exit 0
 fi
 
-echo "-- ${today} backup --"
-
-if [[ ${debug} ]]; then
-	rsync_extra="--verbose"
+if [[ ${verbose} ]]; then
+	rsync_opts+=" --verbose"
 fi
 
-for s in ${SRC}; do
-	suf=${s////-}
-	cmd="sudo rsync -a --delete --inplace --backup \
-		${rsync_extra} \
-		--backup-dir=${DAILY_MOUNT}${DAILY_PATH}-${suf}/ \
-		${s}/ ${BACKUP_SERVER}:${FULL_MOUNT}${FULL_PATH}-${suf}/"
+if [[ ${checksum} ]]; then
+	rsync_opts+=' --checksum'
+fi
 
-	if ! eval "${cmd}"; then
-		echo "${script_name}: ERROR: failed (${?}): '${cmd}'." >&2
-		exit 1
-	fi
+if [[ "${backup_server}" == 'localhost' ]]; then
+	remote_host=''
+else
+	remote_host="${backup_server}"
+fi
+
+# for (( i = 0; i < ${#backup_list[@]}; i++ )); do
+# 	echo "${script_name}: INFO: Processing '${backup_list[i]}'." >&2
+# 
+# 	backup_dir="${backup_list[i]%/*}"
+# 	full_dir="${full_backup_mount}${full_backup_path}/full${backup_dir}"
+# 	daily_dir="${daily_backup_mount}${daily_backup_path}/daily-${start_time}${backup_dir}"
+# 
+# 	run_remote_cmd "${backup_server}" mkdir -p "${full_dir}"
+# 	run_remote_cmd "${backup_server}" mkdir -p "${daily_dir}"
+# 
+# 	"${rsync}" --archive --delete --inplace --times ${rsync_opts} --backup \
+# 		--backup-dir="${remote_host}${daily_dir}" \
+# 		"${backup_list[i]}" "${remote_host}${full_dir}"
+# done
+
+for (( i = 0; i < ${#backup_list[@]}; i++ )); do
+	echo "${script_name}: INFO: Processing '${backup_list[i]}'." >&2
+
+	run_remote_cmd "${backup_server}" mkdir -p "${full_dir%/*}" "${daily_dir%/*}"
+
+	"${rsync}" --archive --delete --inplace --times ${rsync_opts} --backup \
+		--backup-dir="${remote_host}${daily_dir}" \
+		"${backup_list[i]}" "${remote_host}${full_dir}"
 done
 
 print_disk_stats
 
-trap "on_exit 'success.'" EXIT
+trap "on_exit 'Success'" EXIT
 exit 0

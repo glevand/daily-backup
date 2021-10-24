@@ -1,9 +1,17 @@
-#!/bin/bash
-# Config file for daily-backup.sh
+# Sample daily-backup configuration file.
+# https://github.com/glevand/daily-backup
+#
 
-BACKUP_SERVER=${BACKUP_SERVER:-"root@backup"}
-#SRC=${SRC:-"/etc /home"}
-#FULL_MOUNT=${FULL_MOUNT:-"/home/${HOSTNAME}-full-backup"}
-#DAILY_MOUNT=${DAILY_MOUNT:-"/home/${HOSTNAME}-daily-backup"}
-#FULL_PATH=${FULL_PATH:-"/full"}
-#DAILY_PATH=${DAILY_PATH:-"/${today}"}
+backup_server="${backup_server:-root@backup-host}"
+# backup_server='localhost'
+
+backup_list=(
+	'/etc'
+	'/home/${USER}'
+)
+
+full_backup_mount="${full_backup_mount:-/home/${HOSTNAME}-full_backups}"
+full_backup_path="${full_backup_path:-/daily-backups}"
+
+daily_backup_mount="${daily_backup_mount:-/home/${HOSTNAME}-daily_backups}"
+daily_backup_path="${daily_backup_path:-/daily-backups}"
