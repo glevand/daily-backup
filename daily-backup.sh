@@ -9,17 +9,18 @@ usage() {
 		echo "${script_name} - Daily rsync backup."
 		echo "Usage: ${script_name} [flags]"
 		echo "Option flags:"
-		echo "  -c --clean    - Delete oldest existing daily backup."
-		echo "  -s --stats    - Report backup server disk stats."
-		echo "  -u --usage    - Report backup server disk usage (slow)."
-		echo "  -k --checksum - Use rsync checksum (slow)."
+		echo "  -l --clean    - Delete oldest existing daily backup. Default: '${disk_clean}'."
+		echo "  -s --stats    - Report backup server disk stats. Default: '${disk_stats}'."
+		echo "  -u --usage    - Report backup server disk usage (slow). Default: '${disk_usage}'."
+		echo "  -k --checksum - Use rsync checksum (slow). Default: '${checksum}'."
+		echo "  -c --config   - Config file. Default: '${config_file}'."
 		echo "  -h --help     - Show this help and exit."
 		echo "  -v --verbose  - Verbose execution. Default: '${verbose}'."
 		echo "  -g --debug    - Extra verbose execution. Default: '${debug}'."
-		echo "  -d --dry-run  - Dry run, don't run rsync."
+		echo "  -d --dry-run  - Dry run, don't run rsync. Default: '${dry_run}'."
 		echo "Environment/Config:"
-		echo "  backup_server      - Required. Default: '${backup_server:-(none)}'"
 		echo "  backup_list        - List of directories to backup. Default: '${backup_list[@]}'"
+		echo "  backup_server      - Default: '${backup_server}'"
 		echo "  full_backup_mount  - Default: '${full_backup_mount}'"
 		echo "  full_backup_path   - Default: '${full_backup_path}'"
 		echo "  daily_backup_mount - Default: '${daily_backup_mount}'"
@@ -33,8 +34,8 @@ usage() {
 }
 
 process_opts() {
-	local short_opts="csukhvgd"
-	local long_opts="clean,stats,usage,checksum,help,verbose,debug,dry-run"
+	local short_opts="lsukc:hvgd"
+	local long_opts="clean,stats,usage,checksum,config:,help,verbose,debug,dry-run"
 
 	local opts
 	opts=$(getopt --options ${short_opts} --long ${long_opts} -n "${script_name}" -- "$@")
@@ -44,7 +45,7 @@ process_opts() {
 	while true ; do
 		#echo "${FUNCNAME[0]}: @${1}@ @${2}@"
 		case "${1}" in
-		-c | --clean)
+		-l | --clean)
 			disk_clean=1
 			shift
 			;;
@@ -59,6 +60,10 @@ process_opts() {
 		-k | --checksum)
 			checksum=1
 			shift
+			;;
+		-c | --config)
+			config_file="${2}"
+			shift 2
 			;;
 		-h | --help)
 			usage=1
@@ -111,7 +116,7 @@ on_exit() {
 
 	umount_vols
 
-	echo "${script_name}: Done: ${result}, ${sec} sec." >&2
+	echo "${script_name}: Done: ${result}, ${sec} sec ($(sec_to_min "${sec}") min)." >&2
 }
 
 on_err() {
@@ -129,6 +134,24 @@ on_err() {
 	} >&2
 
 	exit "${err_no}"
+}
+
+sec_to_min() {
+	local sec=${1}
+
+	local min
+	local frac_10
+	local frac_100
+
+	min=$(( sec / 60 ))
+	frac_10=$(( (sec - min * 60) * 10 / 60 ))
+	frac_100=$(( (sec - min * 60) * 100 / 60 ))
+
+	if (( frac_10 != 0 )); then
+		frac_10=''
+	fi
+
+	echo "${min}.${frac_10}${frac_100}"
 }
 
 find_config() {
@@ -179,11 +202,10 @@ get_files() {
 
 print_files() {
 	{
-		echo "${script_name}: INFO: full backups:"
+		echo "${script_name}: INFO: ${backup_name}"
+		echo "${script_name}: INFO: Full backups:"
 		get_files "${full_backup_mount}${full_backup_path}/full/*"
-
-		echo
-		echo "${script_name}: INFO: daily backups:"
+		echo "${script_name}: INFO: Daily backups:"
 		get_files "${daily_backup_mount}${daily_backup_path}/daily-*"
 		echo
 	}
@@ -197,10 +219,10 @@ get_disk_stats() {
 
 print_disk_stats() {
 	{
-		echo "${script_name}: INFO: full mount stats:"
+		echo "${script_name}: INFO: ${backup_name}"
+		echo "${script_name}: INFO: Full mount stats:"
 		get_disk_stats "${full_backup_mount}"
-		echo
-		echo "${script_name}: INFO: daily mount stats:"
+		echo "${script_name}: INFO: Daily mount stats:"
 		get_disk_stats "${daily_backup_mount}"
 		echo
 	}
@@ -294,6 +316,7 @@ disk_clean=''
 disk_stats=''
 disk_usage=''
 checksum=''
+config_file=''
 usage=''
 verbose=''
 debug=''
@@ -301,6 +324,14 @@ dry_run=''
 
 keep_tmp_dir=''
 rsync_opts=''
+
+declare -a backup_list=()
+backup_server=''
+full_backup_mount=''
+full_backup_path=''
+daily_backup_mount=''
+daily_backup_path=''
+backup_name=''
 
 declare -a unmount_list=()
 
@@ -315,7 +346,7 @@ if [[ ${usage} ]]; then
 	if [[ -f "${config_file}" ]]; then
 		source "${config_file}"
 	else
-		echo "${script_name}: WARNING: No config file found." >&2
+		echo "${script_name}: WARNING: Config file not found." >&2
 	fi
 	usage
 	trap - EXIT
@@ -323,14 +354,17 @@ if [[ ${usage} ]]; then
 fi
 
 if [[ ! -f "${config_file}" ]]; then
-	echo "${script_name}: ERROR: No config file found." >&2
+	echo "${script_name}: ERROR: Config file not found." >&2
+	usage
 	exit 1
 fi
 
 source "${config_file}"
 
+backup_name="${backup_name:-${backup_server}:${full_backup_mount}${full_backup_path}}"
+
 {
-	echo "${script_name} -- ${start_time}"
+	echo "${script_name} - ${start_time} - ${backup_name}"
 	echo
 }
 
