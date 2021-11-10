@@ -8,7 +8,7 @@ usage() {
 	{
 		echo "${script_name} - Daily rsync backup."
 		echo "Usage: ${script_name} [flags]"
-		echo "Option flags:"
+		echo 'Option flags:'
 		echo "  -l --clean    - Delete oldest existing daily backup. Default: '${disk_clean}'."
 		echo "  -s --stats    - Report backup server disk stats. Default: '${disk_stats}'."
 		echo "  -u --usage    - Report backup server disk usage (slow). Default: '${disk_usage}'."
@@ -18,16 +18,19 @@ usage() {
 		echo "  -v --verbose  - Verbose execution. Default: '${verbose}'."
 		echo "  -g --debug    - Extra verbose execution. Default: '${debug}'."
 		echo "  -d --dry-run  - Dry run, don't run rsync. Default: '${dry_run}'."
-		echo "Environment/Config:"
-		echo "  backup_list        - List of directories to backup. Default: '${backup_list[@]}'"
+		echo 'Environment/Config:'
+		echo "  backup_list        - Default: '${backup_list[@]}'"
 		echo "  backup_server      - Default: '${backup_server}'"
+		echo "  backup_opts        - Default: '${backup_opts}'"
 		echo "  full_backup_mount  - Default: '${full_backup_mount}'"
 		echo "  full_backup_path   - Default: '${full_backup_path}'"
 		echo "  daily_backup_mount - Default: '${daily_backup_mount}'"
 		echo "  daily_backup_path  - Default: '${daily_backup_path}'"
-		echo "Examples:"
+		echo 'Examples:'
 		echo "  backup_server=\"my-backup\" ${script_name} -s"
 		echo "  nice -n19 ${script_name} -v"
+		echo 'Info:'
+		echo '  Project Home: https://github.com/glevand/daily-backup'
 	} >&2
 
 	eval "${old_xtrace}"
@@ -327,6 +330,7 @@ rsync_opts=''
 
 declare -a backup_list=()
 backup_server=''
+backup_opts=''
 full_backup_mount=''
 full_backup_path=''
 daily_backup_mount=''
