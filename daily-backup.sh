@@ -119,7 +119,13 @@ on_exit() {
 
 	umount_vols
 
-	echo "${script_name}: Done: ${result}, ${sec} sec ($(sec_to_min "${sec}") min)." >&2
+	if (( sec < 3600 )); then
+		set +x
+		echo "${script_name}: Done: ${result}, ${sec} sec ($(sec_to_min "${sec}") min)." >&2
+	else
+		set +x
+		echo "${script_name}: Done: ${result}, $(sec_to_min "${sec}") min ($(sec_to_hour "${sec}") hour)." >&2
+	fi
 }
 
 on_err() {
@@ -155,6 +161,24 @@ sec_to_min() {
 	fi
 
 	echo "${min}.${frac_10}${frac_100}"
+}
+
+sec_to_hour() {
+	local sec=${1}
+
+	local hour
+	local frac_10
+	local frac_100
+
+	hour=$(( sec / 3600 ))
+	frac_10=$(( (sec - hour * 3600) * 10 / 3600 ))
+	frac_100=$(( (sec - hour * 3600) * 100 / 3600 ))
+
+	if (( frac_10 != 0 )); then
+		frac_10=''
+	fi
+
+	echo "${hour}.${frac_10}${frac_100}"
 }
 
 find_config() {
