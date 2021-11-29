@@ -352,14 +352,14 @@ dry_run=''
 keep_tmp_dir=''
 rsync_opts=''
 
-declare -a backup_list=()
-backup_server=''
-backup_opts=''
-full_backup_mount=''
-full_backup_path=''
-daily_backup_mount=''
-daily_backup_path=''
-backup_name=''
+declare -a backup_list
+backup_server="${backup_server:-}"
+backup_opts="${backup_opts:-}"
+full_backup_mount="${full_backup_mount:-}"
+full_backup_path="${full_backup_path:-}"
+daily_backup_mount="${daily_backup_mount:-}"
+daily_backup_path="${daily_backup_path:-}"
+backup_name="${backup_name:-}"
 
 declare -a unmount_list=()
 
