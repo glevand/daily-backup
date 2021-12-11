@@ -212,7 +212,17 @@ run_remote_cmd() {
 	else
 		full_cmd="${ssh} ${ssh_opts} ${host} '${cmd}'"
 	fi
-	eval "${full_cmd}"
+
+	local result
+	local status=0
+
+	result="$(eval "${full_cmd}")" || status="${?}"
+
+	if [[ "${status}" != '0' && ${verbose} ]]; then
+		echo "${script_name}: ERROR: Remote command failed: '${full_cmd}'." >&2
+	fi
+
+	echo "${result}"
 }
 
 print_disk_usage() {
@@ -224,7 +234,12 @@ print_disk_usage() {
 get_files() {
 	local dir=${1}
 
-	run_remote_cmd "${backup_server}" ls -dgotr "${dir}" | grep -E --invert-match 'lost\+found'  | grep -E '^d'
+	local result
+	result="$(run_remote_cmd "${backup_server}" ls -dgotr "${dir}")"
+
+	if [[ "${result}" ]]; then
+		echo "${result}" | grep -E --invert-match 'lost\+found'  | grep -E '^d'
+	fi
 }
 
 print_files() {
